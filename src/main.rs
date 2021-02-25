@@ -2,6 +2,8 @@ mod operator;
 
 use operator::Op;
 
+use anyhow::bail;
+use anyhow::Result;
 use structopt::StructOpt;
 
 #[derive(Debug)]
@@ -16,14 +18,23 @@ pub enum InitialToken {
     Op(Op),
 }
 
-/// Calculator
+/// Logik
 #[derive(Debug, StructOpt)]
+#[structopt(author, about)]
+/// Simple command line calculator
 struct Opt {
     /// Input string
     input: String,
 }
 
 fn main() {
+    if let Err(e) = run() {
+        println!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let opt: Opt = Opt::from_args();
 
     let mut buffer = String::new();
@@ -53,49 +64,61 @@ fn main() {
         }
     }
 
-    let mut tokens: Vec<Token> = tokens
-        .iter()
-        .map(|tk| match tk {
-            InitialToken::Op(op) => Token::Op(*op),
-            InitialToken::MaybeNumber(mb_num) => {
-                if let Ok(num) = mb_num.parse::<f64>() {
-                    Token::Number(num)
-                } else {
-                    panic!("{} cannot be converted into a number", mb_num);
-                }
-            }
-        })
-        .collect();
+    let tokens: Vec<Token> = {
+        let mut nt = vec![];
+        for tk in tokens {
+            let v = match tk {
+                InitialToken::Op(op) => Token::Op(op),
+                InitialToken::MaybeNumber(mb_num) => match mb_num.parse::<f64>() {
+                    Ok(num) => Token::Number(num),
+                    Err(e) => bail!("Could not convert \"{}\" to f64 - ({})", mb_num, e),
+                },
+            };
+            nt.push(v);
+        }
+        nt
+    };
 
     let mut counter = 0f64;
 
-    if let Some(first) = tokens.get(0) {
+    if let Some(_first) = tokens.get(0) {
+        /*
         if let Token::Op(op) = first {
             if *op == Op::Add || *op == Op::Sub {
                 tokens.insert(0, Token::Number(0f64));
             }
         }
+        */
 
         counter = match &tokens[0] {
             Token::Op(op) => {
-                panic!("Cannot have {} in the start", op);
+                bail!("Cannot start with \"{}\"", op);
             }
             Token::Number(num) => *num,
         };
 
         for i in (1..tokens.len()).filter(|x| x % 2 == 1) {
             let tk = &tokens[i];
-            let tk_after = &tokens[i + 1];
             counter = match tk {
-                Token::Op(op) => match tk_after {
-                    Token::Op(_) => panic!("Expected number found operator"),
-                    Token::Number(num) => op.execute(counter, *num),
-                },
-                Token::Number(_) => panic!("Expected operator found number"),
+                Token::Op(op) => {
+                    if (i + 1) > tokens.len() {
+                        bail!("Expected something after \"{}\"", op);
+                    }
+
+                    let tk_after = &tokens[i + 1];
+                    match tk_after {
+                        Token::Op(after_op) => {
+                            bail!("Expected number found operator \"{}\"", after_op)
+                        }
+                        Token::Number(num) => op.execute(counter, *num),
+                    }
+                }
+                Token::Number(num) => bail!("Expected operator found number \"{}\"", num),
             };
         }
     }
 
     println!("{:?}", tokens);
     println!("{}", counter);
+    Ok(())
 }
