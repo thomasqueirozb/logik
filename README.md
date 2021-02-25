@@ -2,7 +2,7 @@
 
 ## Instalação do rust
 
-Se você já tem o rust instalado pode pular essa parte. Caso contŕaio abra a aba rustup a seguir.
+Se você já tem o rust instalado pode pular essa parte. Caso contrário abra a aba rustup a seguir.
 
 <details>
 <summary>rustup</summary>
@@ -44,30 +44,30 @@ rustc 1.50.0 (cb75ad5db 2021-02-10)
 
 ## Como compilar e rodar
 
-- Para rodar e compilar
+### Para rodar e compilar
 
 ```shell
 cargo run -- FLAGS
 ```
 
-Onde FLAGS são qualquer parâmetro que você queira utilizar. Para ajuda utilize a flag `--help`. Caso queira rodar em release altere o comando para `cargo run --release -- FLAGS`.
+Para `FLAGS` pode ser passado `--help` para ajuda
 
+O programa pode ser utilizado da seguinte maneira:
 
+```shell
+cargo run --quiet -- "1 +  1    - 5"
+```
 
-- Para compilar (não é necessário usar se rodar `cargo run`)
-  
-  - Em debug
-    
-    ```shell
-    cargo build
-    ```
-    
-    O binário estará em `target/debug/logik`.
-  
-  - Em release
-    
-    ```shell
-    cargo build
-    ```
-    
-    O binário estará em `target/release/logik`.
+### Para compilar e rodar separadamente
+
+Compilando
+
+```shell
+cargo build
+```
+
+Rodando
+
+```shell
+./target/debug/logik " 1 + 2 -3 + 4"
+```
