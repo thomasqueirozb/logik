@@ -118,7 +118,7 @@ fn run() -> Result<()> {
         }
     }
 
-    println!("{:?}", tokens);
+    // println!("{:?}", tokens);
     println!("{}", counter);
     Ok(())
 }
