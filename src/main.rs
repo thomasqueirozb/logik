@@ -102,7 +102,7 @@ fn run() -> Result<()> {
             let tk = &tokens[i];
             counter = match tk {
                 Token::Op(op) => {
-                    if (i + 1) > tokens.len() {
+                    if (i + 1) >= tokens.len() {
                         bail!("Expected something after \"{}\"", op);
                     }
 
