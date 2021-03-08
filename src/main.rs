@@ -29,7 +29,7 @@ struct Opt {
 
 fn main() {
     if let Err(e) = run() {
-        println!("Error: {}", e);
+        eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 }
