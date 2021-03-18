@@ -79,20 +79,18 @@ fn tokenize(input: String) -> Result<Vec<Token>> {
                         }
                     }
                 }
-                TokenizerState::Comment => {
-                    match c {
-                        '*' => {
-                            buffer.clear(); //FIXME
-                            buffer.push(c);
-                        }
-                        '/' => {
-                            if !buffer.is_empty() {
-                                state = TokenizerState::None
-                            }
-                        }
-                        _ => {}
+                TokenizerState::Comment => match c {
+                    '*' => {
+                        buffer.clear();
+                        buffer.push(c);
                     }
-                }
+                    '/' => {
+                        if !buffer.is_empty() {
+                            state = TokenizerState::None
+                        }
+                    }
+                    _ => buffer.clear(),
+                },
             }
             // println!("c {}, state {:?}", c, state);
         }
@@ -113,7 +111,6 @@ fn tokenize(input: String) -> Result<Vec<Token>> {
                         buffer.clear();
                     }
                 }
-
                 TokenizerState::Number => {
                     if buffer.len() != 0 {
                         match buffer.parse::<i64>() {
@@ -138,7 +135,7 @@ fn tokenize(input: String) -> Result<Vec<Token>> {
     Ok(tokens)
 }
 
-fn parse(tokens: Vec<Token>) -> Result<i64> {
+fn parse(mut tokens: Vec<Token>) -> Result<i64> {
     // println!("tokens {:?}", tokens);
     if let Some(_first) = tokens.get(0) {
         /*
@@ -149,17 +146,15 @@ fn parse(tokens: Vec<Token>) -> Result<i64> {
         }
         */
 
-        let mut nt = tokens.clone();
-
-        let get_num = |nt: &mut Vec<Token>, i: usize| -> Result<i64> {
-            match nt.get(i).context("Missing token")? {
+        let get_num = |tokens: &mut Vec<Token>, i: usize| -> Result<i64> {
+            match tokens.get(i).context("Missing token")? {
                 Token::Op(op) => bail!("Expected number found operator \"{}\"", op),
                 Token::Number(num) => Ok(*num),
             }
         };
 
-        let get_op = |nt: &mut Vec<Token>, i: usize| -> Result<Op> {
-            match nt.get(i).context("Missing token")? {
+        let get_op = |tokens: &mut Vec<Token>, i: usize| -> Result<Op> {
+            match tokens.get(i).context("Missing token")? {
                 Token::Op(op) => Ok(*op),
                 Token::Number(num) => bail!("Expected operator found number \"{}\"", num),
             }
@@ -170,40 +165,40 @@ fn parse(tokens: Vec<Token>) -> Result<i64> {
             has_changed = false;
 
             let mut i = 0;
-            while i < nt.len() {
-                let num_0 = get_num(&mut nt, i)?;
+            while i < tokens.len() {
+                let num_0 = get_num(&mut tokens, i)?;
 
-                if i + 1 >= nt.len() {
+                if i + 1 >= tokens.len() {
                     break;
                 }
 
-                let op_1 = get_op(&mut nt, i + 1)?;
+                let op_1 = get_op(&mut tokens, i + 1)?;
 
                 if op_1 == Op::Add || op_1 == Op::Sub {
                     i += 2;
                 } else {
-                    let num_2 = get_num(&mut nt, i + 2)?;
+                    let num_2 = get_num(&mut tokens, i + 2)?;
 
-                    nt.remove(i);
-                    nt.remove(i);
-                    nt.remove(i);
-                    nt.insert(i, Token::Number(op_1.execute(num_0, num_2)));
+                    tokens.remove(i);
+                    tokens.remove(i);
+                    tokens.remove(i);
+                    tokens.insert(i, Token::Number(op_1.execute(num_0, num_2)));
                     has_changed = true;
                 }
             }
         }
 
-        let mut counter = get_num(&mut nt, 0)?;
+        let mut counter = get_num(&mut tokens, 0)?;
 
         let mut i = 1;
-        while i < nt.len() {
-            let op = get_op(&mut nt, i)?;
+        while i < tokens.len() {
+            let op = get_op(&mut tokens, i)?;
 
-            if i + 1 >= nt.len() {
+            if i + 1 >= tokens.len() {
                 bail!("Expected number after operator");
             }
 
-            let num = get_num(&mut nt, i + 1)?;
+            let num = get_num(&mut tokens, i + 1)?;
             counter = op.execute(counter, num);
             i += 2;
         }
@@ -244,6 +239,8 @@ fn comment() {
     assert_eq!(eval("/* /* 3 */ 1 /* b */").unwrap(), 1);
     assert_eq!(eval("/* /**/ 2+1 /* b */").unwrap(), 3);
     assert_eq!(eval("1-/*/**/ 2+1 /* b */").unwrap(), 0);
+    assert_eq!(eval("2*/*/**/ 3+5 /* b */").unwrap(), 11);
+    assert_eq!(eval("2 /* * /+ 2 */ + 2").unwrap(), 4);
 }
 
 #[test]
@@ -258,11 +255,11 @@ fn sum_sub() {
 #[test]
 fn div_mul() {
     assert_eq!(eval("81/ 9 + 3").unwrap(), 12);
-    // assert_eq!(eval("4/2").unwrap(), 2);
-    // assert_eq!(eval("4/2 + 3").unwrap(), 5);
-    // assert_eq!(eval("3 + 4/2").unwrap(), 5);
-    // assert_eq!(eval("3*5 + 10").unwrap(), 25);
-    // assert_eq!(eval("10 + 3*5").unwrap(), 25);
+    assert_eq!(eval("4/2").unwrap(), 2);
+    assert_eq!(eval("4/2 + 3").unwrap(), 5);
+    assert_eq!(eval("3 + 4/2").unwrap(), 5);
+    assert_eq!(eval("3*5 + 10").unwrap(), 25);
+    assert_eq!(eval("10 + 3*5").unwrap(), 25);
 }
 
 #[test]
