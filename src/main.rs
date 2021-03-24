@@ -1,9 +1,10 @@
 mod operator;
-mod parse;
+mod parenthesis;
+mod parser;
 mod test;
 mod token;
 
-use parse::eval;
+use parser::eval;
 
 use anyhow::{bail, Context, Result};
 // use structopt::StructOpt;

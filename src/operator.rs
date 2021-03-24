@@ -22,7 +22,7 @@ impl Op {
         }
     }
 
-    pub fn is_op(c: char) -> bool {
+    pub fn is_valid(c: char) -> bool {
         match c {
             '*' => true,
             '/' => true,

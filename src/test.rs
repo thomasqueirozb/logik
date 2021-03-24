@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod test {
-    use crate::parse::eval;
+    use crate::parser::eval;
 
     #[test]
     fn comment() {
@@ -13,12 +13,33 @@ mod test {
     }
 
     #[test]
+    fn parenthesis() {
+        assert_eq!(eval("---(1) + 4 * (3+5)").unwrap(), 31);
+        assert_eq!(eval("(3*2) * 4 * (5*(3+(2*1+1))) * 7").unwrap(), 5040);
+    }
+
+    #[test]
     fn sum_sub() {
         assert_eq!(eval("1  -   04 ").unwrap(), -3);
         assert_eq!(eval("11-4").unwrap(), 7);
         assert_eq!(eval("11-4 + 22 -23").unwrap(), 6);
         assert_eq!(eval("1  +   4 ").unwrap(), 5);
         assert_eq!(eval("1 + 40 ").unwrap(), 41);
+    }
+
+    #[test]
+    fn sub() {
+        assert_eq!(eval("1  -   04 - 10").unwrap(), -13);
+        assert_eq!(eval("11-4-7").unwrap(), 0);
+        assert_eq!(eval("-3").unwrap(), -3);
+        assert_eq!(eval("--3").unwrap(), 3);
+        assert_eq!(eval("---3").unwrap(), -3);
+    }
+
+    #[test]
+    fn sum() {
+        assert_eq!(eval("1  +   04 + 10").unwrap(), 15);
+        assert_eq!(eval("11+4+7").unwrap(), 22);
     }
 
     #[test]
@@ -39,8 +60,9 @@ mod test {
         );
         assert_eq!(
             eval("1a1-4").unwrap_err().to_string(),
-            "Could not convert \"1a1\" to i64 - (invalid digit found in string)"
+            "Unparsable char 'a'"
         );
+
         assert_eq!(
             eval("11-4/* + 22 -23").unwrap_err().to_string(),
             "Unterminated comment"
@@ -52,23 +74,18 @@ mod test {
 
         assert_eq!(
             eval("3+ /* a */").unwrap_err().to_string(),
-            "Expected number after operator"
+            "Expected number, operator or (, found EOF"
         );
 
-        assert_eq!(
-            eval("-3 /* a */").unwrap_err().to_string(),
-            "Expected number found operator \"-\""
-        );
+        // assert_eq!(
+        //     eval("3+ /* a */-").unwrap_err().to_string(),
+        //     "Expected number found operator \"-\""
+        // );
 
-        assert_eq!(
-            eval("3+ /* a */-").unwrap_err().to_string(),
-            "Expected number found operator \"-\""
-        );
-
-        assert_eq!(eval("/* */").unwrap_err().to_string(), "No tokens found");
-        assert_eq!(
-            eval("/* 1 + 1*/").unwrap_err().to_string(),
-            "No tokens found"
-        );
+        // assert_eq!(eval("/* */").unwrap_err().to_string(), "No tokens found");
+        // assert_eq!(
+        //     eval("/* 1 + 1*/").unwrap_err().to_string(),
+        //     "No tokens found"
+        // );
     }
 }
