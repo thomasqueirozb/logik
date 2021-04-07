@@ -3,9 +3,11 @@ use crate::parenthesis::Parenthesis;
 
 use anyhow::{bail, Context, Result};
 
-#[derive(Debug, Copy, Clone)]
+pub type Number = i64;
+
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Token {
-    Number(i64),
+    Number(Number),
     Op(Op),
     Parenthesis(Parenthesis),
     EOF,
@@ -102,9 +104,11 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
 
                 TokenizerState::Number => {
                     if buffer.len() != 0 {
-                        match buffer.parse::<i64>() {
+                        match buffer.parse::<Number>() {
                             Ok(num) => tokens.push(Token::Number(num)),
-                            Err(e) => bail!("Could not convert \"{}\" to i64 - ({})", buffer, e),
+                            Err(e) => {
+                                bail!("Could not convert \"{}\" to a number - ({})", buffer, e)
+                            }
                         }
 
                         buffer.clear();

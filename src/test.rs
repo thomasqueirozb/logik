@@ -15,7 +15,10 @@ mod test {
     #[test]
     fn parenthesis() {
         assert_eq!(eval("---(1) + 4 * (3+5)").unwrap(), 31);
+        assert!(eval("---(1) + 4 * (3+5))").is_err());
         assert_eq!(eval("(3*2) * 4 * (5*(3+(2*1+1))) * 7").unwrap(), 5040);
+        assert!(eval("1()").is_err());
+        assert!(eval("1(+)").is_err());
     }
 
     #[test]
@@ -74,18 +77,26 @@ mod test {
 
         assert_eq!(
             eval("3+ /* a */").unwrap_err().to_string(),
-            "Expected number, operator or (, found EOF"
+            "Expected number, operator or '(', found EOF"
         );
 
-        // assert_eq!(
-        //     eval("3+ /* a */-").unwrap_err().to_string(),
-        //     "Expected number found operator \"-\""
-        // );
+        assert_eq!(
+            eval("3+ /* a */-").unwrap_err().to_string(),
+            "Expected number, operator or '(', found EOF"
+        );
 
-        // assert_eq!(eval("/* */").unwrap_err().to_string(), "No tokens found");
-        // assert_eq!(
-        //     eval("/* 1 + 1*/").unwrap_err().to_string(),
-        //     "No tokens found"
-        // );
+        assert_eq!(
+            eval("/* */").unwrap_err().to_string(),
+            "Expected number, operator or '(', found EOF"
+        );
+        assert_eq!(
+            eval("/* 1 + 1*/").unwrap_err().to_string(),
+            "Expected number, operator or '(', found EOF"
+        );
+
+        assert_eq!(
+            eval("*/**/").unwrap_err().to_string(),
+            "Expected '+' or '-' found '*'"
+        );
     }
 }
