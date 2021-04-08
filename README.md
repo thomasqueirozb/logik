@@ -55,7 +55,13 @@ Para `FLAGS` pode ser passado `--help` para ajuda
 O programa pode ser utilizado da seguinte maneira:
 
 ```shell
-cargo run --quiet -- "1 +  1    - 5"
+cargo run --quiet -- -c "1 +  1    - 5"
+```
+
+Ou utilizando um arquivo:
+
+```shell
+cargo run --quiet file.c
 ```
 
 ### Para compilar e rodar separadamente
@@ -69,5 +75,5 @@ cargo build
 Rodando
 
 ```shell
-./target/debug/logik " 1 + 2 -3 + 4"
+./target/debug/logik -c " 1 + 2 -3 + 4"
 ```
