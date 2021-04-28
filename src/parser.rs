@@ -3,25 +3,30 @@ use crate::operator::Op;
 use crate::parenthesis::*;
 use crate::token::*;
 
+use std::collections::HashMap;
+
 use anyhow::{bail, Result};
 
 pub struct Parser {
     tokens: Vec<Token>,
     idx: usize,
+    vars: HashMap<String, Number>,
 }
 
 impl Parser {
-    pub fn parse(tokens: Vec<Token>) -> Result<Number> {
-        let mut parser = Self {
+    fn new(tokens: Vec<Token>) -> Self {
+        Parser {
             tokens,
             idx: 0usize.wrapping_sub(1),
-        };
-        let tree_root = parser.parse_expression()?;
-        if parser.cur_token()? == Token::EOF {
-            Ok(tree_root.eval())
-        } else {
-            bail!("Finished parsing but did not find EOF")
+            vars: HashMap::new(),
         }
+    }
+
+    pub fn parse(tokens: Vec<Token>) -> Result<()> {
+        // dbg!(tokens.clone());
+        let mut parser = Parser::new(tokens);
+
+        parser.parse_block()
     }
 
     fn select_next(&mut self) {
@@ -35,7 +40,7 @@ impl Parser {
 
     fn cur_token(&mut self) -> Result<Token> {
         match self.tokens.get(self.idx) {
-            Some(tk) => Ok(*tk),
+            Some(tk) => Ok(tk.clone()), // FIXME remove clone
             None => bail!("Could not get next token"),
         }
     }
@@ -46,6 +51,21 @@ impl Parser {
                 self.select_next();
                 Ok(Box::new(NumberNode::new(n)))
             }
+
+            Token::Variable(name) => {
+                self.select_next();
+                // FIXME use VariableNode instead
+                Ok(Box::new(NumberNode::new(
+                    *self
+                        .vars
+                        .get(&name)
+                        .expect("variable used before assignment"),
+                )))
+            }
+
+            // TODO: fix error messages here
+            Token::SemiColon => bail!("Unexpected ;"),
+            Token::Equals => bail!("Unexpected ="),
 
             Token::Op(op) => {
                 let value = match op {
@@ -73,9 +93,9 @@ impl Parser {
                     self.select_next();
                     Ok(r)
                 }
-                Parenthesis::Close => unreachable!(),
+                Parenthesis::Close => unreachable!(), // FIXME probably reachable
             },
-            _ => bail!("Expected number, operator or '(', found EOF"),
+            Token::EOF => bail!("Expected number, operator or '(', found EOF"),
         }
     }
 
@@ -119,14 +139,70 @@ impl Parser {
 
         Ok(c)
     }
+
+    fn parse_command(&mut self) -> Result<()> {
+        if let Token::Variable(name) = self.cur_token()? {
+            match self.next_token()? {
+                Token::Parenthesis(p) => {
+                    match p {
+                        Parenthesis::Open => {
+                            // Function call
+                            match name.as_str() {
+                                "println" => {
+                                    println!("{}", self.parse_expression()?.eval());
+                                    self.select_next();
+                                }
+                                _ => bail!("Unrecognized funcion name {}", name),
+                            }
+                        }
+                        Parenthesis::Close => {
+                            bail!("Close par") // TODO fix error message
+
+                            // unreachable!() // ?
+                        }
+                    }
+                }
+                Token::Equals => {
+                    let val = self.parse_expression()?.eval(); // FIXME ;
+                    self.vars.insert(name, val);
+                }
+                _ => bail!("Expected = or (...) after {}", name),
+            }
+        } else {
+            bail!("Line not started with variable/function call")
+        }
+        Ok(())
+    }
+
+    fn parse_block(&mut self) -> Result<()> {
+        self.select_next();
+        while self.cur_token()? != Token::EOF {
+            self.parse_command()?;
+            if self.cur_token()? != Token::SemiColon {
+                bail!("Command not terminated by ';'")
+            }
+            self.select_next();
+        }
+        Ok(())
+    }
 }
 
-pub fn eval<T>(input: T) -> Result<Number>
+pub fn eval<T>(input: T) -> Result<()>
 where
     T: Into<String>,
 {
     let tokens = tokenize(input.into())?;
 
-    let result = Parser::parse(tokens)?;
-    Ok(result)
+    Parser::parse(tokens)
+}
+
+#[allow(dead_code)]
+pub(crate) fn eval_expression<T>(input: T) -> Result<Number>
+where
+    T: Into<String>,
+{
+    let tokens = tokenize(input.into())?;
+    let mut parser = Parser::new(tokens);
+
+    Ok(parser.parse_expression()?.eval())
 }

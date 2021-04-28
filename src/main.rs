@@ -48,10 +48,5 @@ fn run() -> Result<()> {
         }
     };
 
-    for line in input.lines() {
-        println!("{}", eval(line)?);
-        break;
-    }
-
-    Ok(())
+    eval(input)
 }
