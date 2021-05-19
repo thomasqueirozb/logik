@@ -1,7 +1,9 @@
 use crate::operator::Op;
 use crate::token::Number;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub trait Node {
     fn eval(&self) -> Number;
@@ -67,22 +69,25 @@ impl Node for NumberNode {
 }
 
 // Variable Node
-pub struct VariableNode<'a> {
+pub struct VariableNode {
     name: String,
-    vars: &'a HashMap<String, Number>,
+    vars: Rc<RefCell<HashMap<String, Number>>>,
 }
-
-impl<'a> VariableNode<'a> {
-    pub fn new(name: String, vars: &'a HashMap<String, Number>) -> Self {
-        Self { name, vars }
+impl VariableNode {
+    pub fn new(name: String, vars: &Rc<RefCell<HashMap<String, Number>>>) -> Self {
+        Self {
+            name,
+            vars: vars.clone(),
+        }
     }
 }
 
-impl<'a> Node for VariableNode<'a> {
+impl Node for VariableNode {
     fn eval(&self) -> Number {
         *self
             .vars
+            .borrow() // WARNING borrow
             .get(&self.name)
-            .expect("variable used before assignment") // FIXME remove expect
+            .expect("variable used before assignment") // FIXME remove expect/ make eval return a result
     }
 }

@@ -1,8 +1,9 @@
 mod ast;
+mod bracket;
 mod operator;
 mod parenthesis;
 mod parser;
-mod test;
+mod tests;
 mod token;
 
 use parser::eval;
@@ -18,7 +19,7 @@ use structopt::StructOpt;
 #[structopt(author, about, rename_all = "kebab-case")]
 /// Simple command line calculator
 struct Opt {
-    /// Program passed in as a string
+    /// Program passed in as a string instead of using a file
     #[structopt(short, long)]
     command: Option<String>,
 
