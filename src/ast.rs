@@ -1,21 +1,23 @@
 use crate::operator::Op;
 use crate::token::Number;
 
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub trait Node {
     fn eval(&self) -> Number;
 }
 
 // Binary Node
-pub struct BinaryNode {
+pub struct BinaryNode<'a> {
     op: Op,
-    left_child: Box<dyn Node>,
-    right_child: Box<dyn Node>,
+    left_child: Box<dyn Node + 'a>,
+    right_child: Box<dyn Node + 'a>,
 }
 
-impl BinaryNode {
-    pub fn new(op: Op, left_child: Box<dyn Node>, right_child: Box<dyn Node>) -> Self {
+impl<'a> BinaryNode<'a> {
+    pub fn new(op: Op, left_child: Box<dyn Node + 'a>, right_child: Box<dyn Node + 'a>) -> Self {
         Self {
             op,
             left_child,
@@ -24,7 +26,7 @@ impl BinaryNode {
     }
 }
 
-impl Node for BinaryNode {
+impl<'a> Node for BinaryNode<'a> {
     fn eval(&self) -> Number {
         self.op
             .execute(self.left_child.eval(), self.right_child.eval())
@@ -32,18 +34,18 @@ impl Node for BinaryNode {
 }
 
 // Unary Node
-pub struct UnaryNode {
-    child: Box<dyn Node>,
+pub struct UnaryNode<'a> {
+    child: Box<dyn Node + 'a>,
     value: Number,
 }
 
-impl UnaryNode {
-    pub fn new(value: Number, child: Box<dyn Node>) -> Self {
+impl<'a> UnaryNode<'a> {
+    pub fn new(value: Number, child: Box<dyn Node + 'a>) -> Self {
         Self { child, value }
     }
 }
 
-impl Node for UnaryNode {
+impl<'a> Node for UnaryNode<'a> {
     fn eval(&self) -> Number {
         self.value * self.child.eval()
     }
@@ -69,20 +71,25 @@ impl Node for NumberNode {
 // Variable Node
 pub struct VariableNode<'a> {
     name: String,
-    vars: &'a HashMap<String, Number>,
+    vars: &'a Rc<Cell<HashMap<String, Number>>>,
 }
 
 impl<'a> VariableNode<'a> {
-    pub fn new(name: String, vars: &'a HashMap<String, Number>) -> Self {
+    pub fn new(name: String, vars: &'a Rc<Cell<HashMap<String, Number>>>) -> Self {
         Self { name, vars }
     }
 }
 
 impl<'a> Node for VariableNode<'a> {
     fn eval(&self) -> Number {
-        *self
-            .vars
-            .get(&self.name)
-            .expect("variable used before assignment") // FIXME remove expect
+        1
+        // WARNING
+        // use std::borrow::*; // FIXME
+        // self.vars
+        //     .borrow()
+
+        //     .get(&self.name)
+        //     .expect("variable used before assignment")
+        //     .clone() // FIXME remove expect
     }
 }
