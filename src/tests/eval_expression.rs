@@ -97,6 +97,6 @@ fn errors() {
 
     assert_eq!(
         eval_expression("*/**/").unwrap_err().to_string(),
-        "Expected '+' or '-' found '*'"
+        "Expected '+' or '-' or '!' found '*'"
     );
 }

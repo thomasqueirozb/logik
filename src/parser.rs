@@ -1,7 +1,5 @@
 use crate::ast::*;
-use crate::bracket::Bracket;
 use crate::operator::Op;
-use crate::parenthesis::*;
 use crate::token::*;
 
 use std::cell::RefCell;
@@ -28,7 +26,8 @@ impl Parser {
     pub fn parse(tokens: Vec<Token>) -> Result<()> {
         let mut parser = Parser::new(tokens);
 
-        parser.parse_block()
+        parser.parse_block()?.eval();
+        Ok(())
     }
 
     fn cur_token(&mut self) -> Result<Token> {
@@ -40,6 +39,10 @@ impl Parser {
 
     fn select_next(&mut self) {
         self.idx = self.idx.wrapping_add(1);
+    }
+
+    fn select_prev(&mut self) {
+        self.idx = self.idx.wrapping_sub(1);
     }
 
     fn next_token(&mut self) -> Result<Token> {
@@ -55,43 +58,44 @@ impl Parser {
                 Ok(Box::new(NumberNode::new(*n)))
             }
 
-            TokenKind::Variable(name) => {
-                self.select_next();
-
-                Ok(Box::new(VariableNode::new(name.clone(), &self.vars)))
+            TokenKind::Identifier(name) => {
+                let ntk = self.next_token()?;
+                if ntk.kind == TokenKind::ParenthesisOpen {
+                    Ok(Box::new(FuncNode::new(name.clone(), self.get_func_args()?)))
+                } else {
+                    Ok(Box::new(VariableNode::new(name.clone(), &self.vars)))
+                }
             }
 
             TokenKind::Op(op) => {
-                let value = match op {
-                    Op::Add => 1,
-                    Op::Sub => -1,
-                    _ => bail!("Expected '+' or '-' found '{}'", op),
+                let kind = match op {
+                    Op::Add => UnaryNodeKind::Pos,
+                    Op::Sub => UnaryNodeKind::Neg,
+                    Op::Not => UnaryNodeKind::Not,
+                    _ => bail!("Expected '+' or '-' or '!' found '{}'", op),
                 };
-                Ok(Box::new(UnaryNode::new(value, self.parse_factor()?)))
+                Ok(Box::new(UnaryNode::new(kind, self.parse_factor()?)))
             }
 
-            TokenKind::Parenthesis(p) => match p {
-                Parenthesis::Open => {
-                    let r = self.parse_expression()?;
+            TokenKind::ParenthesisOpen => {
+                let r = self.parse_cond()?;
 
-                    let closed = {
-                        if let TokenKind::Parenthesis(p) = self.cur_token()?.kind {
-                            p == Parenthesis::Close
-                        } else {
-                            false
-                        }
-                    };
-
-                    if !closed {
-                        bail!("Unclosed parenthesis");
-                    }
-                    self.select_next();
-                    Ok(r)
+                if self.cur_token()?.kind != TokenKind::ParenthesisClose {
+                    bail!("Unclosed parenthesis");
                 }
-                Parenthesis::Close => unreachable!(), // FIXME probably reachable
-            },
+
+                self.select_next();
+                Ok(r)
+            }
+
+            TokenKind::CondOp(op) => {
+                bail!("Expected number, variable, operator or '(', found '{}'", op)
+            }
 
             TokenKind::EOF
+            | TokenKind::ParenthesisClose
+            | TokenKind::BracketOpen
+            | TokenKind::BracketClose
             | TokenKind::SemiColon
             | TokenKind::Assign
             | TokenKind::While
@@ -102,11 +106,6 @@ impl Parser {
                     tk.kind
                 )
             }
-
-            TokenKind::Bracket(inner) => bail!(
-                "Expected number, variable, operator or '(', found '{}'",
-                inner
-            ),
         }
     }
 
@@ -153,70 +152,153 @@ impl Parser {
         Ok(c)
     }
 
-    fn parse_command(&mut self) -> Result<()> {
-        let tk = self.cur_token()?;
-        match &tk.kind {
-            TokenKind::Variable(name) => {
-                let ntk = self.next_token()?;
-                match ntk.kind {
-                    TokenKind::Parenthesis(p) => {
-                        match p {
-                            Parenthesis::Open => {
-                                // Function call
-                                match name.as_str() {
-                                    "println" => {
-                                        println!("{}", self.parse_expression()?.eval());
-                                        self.select_next();
-                                    }
-                                    _ => bail!("Unrecognized funcion name {}", name),
-                                }
-                            }
-                            Parenthesis::Close => {
-                                bail!("Close par") // TODO fix error message
-                            }
-                        }
-                    }
-                    TokenKind::Assign => {
-                        let val = self.parse_expression()?.eval(); // FIXME ;
-                        self.vars.borrow_mut().insert(name.clone(), val); // WARNING borrow_mut
-                    }
-                    _ => bail!("Expected = or (...) after {}", name),
-                }
+    fn get_func_args(&mut self) -> Result<Vec<Box<dyn Node>>> {
+        let mut v = vec![];
+
+        if self.next_token()?.kind != TokenKind::ParenthesisClose {
+            self.select_prev();
+
+            let arg = self.parse_cond()?;
+            v.push(arg);
+
+            let tk = self.cur_token()?;
+            if tk.kind != TokenKind::ParenthesisClose {
+                bail!("Function argument expected ')', found {}", tk.kind);
             }
-            TokenKind::SemiColon => {}
-            _ => bail!("Line not started with variable/function call"),
         }
+        self.select_next();
 
-        if self.cur_token()?.kind != TokenKind::SemiColon {
-            bail!("Command not terminated by ';'")
-        }
-
-        Ok(())
+        Ok(v)
     }
 
-    fn parse_block(&mut self) -> Result<()> {
-        loop {
-            match self.next_token()?.kind {
-                TokenKind::EOF => break,
-                // Always start with {
-                TokenKind::Bracket(b) => match b {
-                    Bracket::Open => {
-                        loop {
-                            match self.next_token()?.kind {
-                                TokenKind::Bracket(b) => match b {
-                                    Bracket::Open => bail!("Open after open"), // TODO fix message
-                                    Bracket::Close => break, // After { there needs to be a }
-                                },
-                                _ => self.parse_command()?,
-                            }
-                        }
+    fn parse_command(&mut self) -> Result<Box<dyn Node>> {
+        let tk = self.cur_token()?;
+        let ret = match &tk.kind {
+            TokenKind::Identifier(name) => {
+                let ntk = self.next_token()?;
+                let r: Box<dyn Node> = match ntk.kind {
+                    TokenKind::ParenthesisOpen => {
+                        // Function call
+                        Box::new(FuncNode::new(name.clone(), self.get_func_args()?))
                     }
-                    Bracket::Close => bail!("Close before open"), // TODO fix message
-                },
-                _ => bail!("block"), // TODO fix message
+                    TokenKind::Assign => Box::new(AssignNode::new(
+                        name.clone(),
+                        self.parse_cond()?,
+                        &self.vars,
+                    )),
+                    _ => bail!("Expected = or (...) after {}", name),
+                };
+                r
+            }
+            TokenKind::If => {
+                let ntk = self.next_token()?;
+                if ntk.kind != TokenKind::ParenthesisOpen {
+                    bail!("Expected '(' after if");
+                }
+
+                let cond = self.parse_cond()?;
+
+                let ntk = self.cur_token()?;
+                if ntk.kind != TokenKind::ParenthesisClose {
+                    bail!("Expected ')' closing if");
+                }
+                self.select_next();
+
+                let if_child = self.parse_command()?;
+
+                let ntk = self.next_token()?;
+
+                if ntk.kind == TokenKind::Else {
+                    self.select_next();
+                    Box::new(IfNode::new(cond, if_child, Some(self.parse_command()?)))
+                } else {
+                    self.select_prev();
+                    Box::new(IfNode::new(cond, if_child, None))
+                }
+            }
+            TokenKind::BracketOpen => self.parse_block()?,
+            TokenKind::While => {
+                let ntk = self.next_token()?;
+                if ntk.kind != TokenKind::ParenthesisOpen {
+                    bail!("Expected '(' after while");
+                }
+
+                let cond = self.parse_cond()?;
+
+                let ntk = self.cur_token()?;
+                if ntk.kind != TokenKind::ParenthesisClose {
+                    bail!("Expected ')' closing while");
+                }
+                self.select_next();
+
+                let child = self.parse_command()?;
+
+                Box::new(WhileNode::new(cond, child))
+            }
+
+            TokenKind::SemiColon => {
+                self.select_next();
+                self.parse_command()? // WARNING FIXME
+            }
+            _ => bail!(
+                "Expected line to be started with variable/function call, got {}",
+                tk.kind
+            ),
+        };
+
+        // if self.cur_token()?.kind != TokenKind::SemiColon {
+        //     bail!("Command not terminated by ';'")
+        // }
+
+        Ok(ret)
+    }
+
+    fn parse_cond(&mut self) -> Result<Box<dyn Node>> {
+        let expr = self.parse_expression()?;
+        let tk = self.cur_token()?;
+        if let TokenKind::CondOp(cop) = tk.kind {
+            let mut cn = Box::new(CondNode::new(cop, expr, self.parse_expression()?));
+            loop {
+                let ltk = self.cur_token()?;
+                if let TokenKind::CondOp(cop) = ltk.kind {
+                    cn = Box::new(CondNode::new(cop, cn, self.parse_expression()?));
+                } else {
+                    break;
+                }
+            }
+            Ok(cn)
+        } else {
+            Ok(expr)
+        }
+    }
+
+    fn parse_block(&mut self) -> Result<Box<dyn Node>> {
+        let mut commands = vec![];
+
+        loop {
+            let tk = self.next_token()?;
+            match tk.kind {
+                TokenKind::EOF | TokenKind::BracketClose => break,
+                _ => commands.push(self.parse_command()?),
+                // // Always start with {
+                // TokenKind::BracketOpen => {
+                //     loop {
+                //         match self.next_token()?.kind {
+                //             TokenKind::BracketOpen => bail!("Open after open"), // TODO fix message
+                //             TokenKind::BracketClose => break,                   // TODO fix message
+                //             _ => commands.push(self.parse_command()?),
+                //         }
+                //     }
+                // }
+                // _ => bail!(
+                //     "Expected '{{' or EOF, got {} at {}:{}",
+                //     tk.kind,
+                //     tk.line,
+                //     tk.col
+                // ),
             }
         }
-        Ok(())
+        Ok(Box::new(BlockNode::new(commands)))
     }
 }
 

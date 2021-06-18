@@ -1,7 +1,5 @@
 mod ast;
-mod bracket;
 mod operator;
-mod parenthesis;
 mod parser;
 mod tests;
 mod token;
