@@ -1,5 +1,7 @@
 # logik
 
+![git status](http://3.129.230.99/svg/thomasqueirozb/logik/)
+
 ## Instalação do rust
 
 Se você já tem o rust instalado pode pular essa parte. Caso contrário abra a aba rustup a seguir.
