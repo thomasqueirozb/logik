@@ -3,6 +3,7 @@ mod operator;
 mod parser;
 mod tests;
 mod token;
+mod variable;
 
 use parser::eval;
 

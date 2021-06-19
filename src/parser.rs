@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::operator::Op;
 use crate::token::*;
+use crate::variable::*;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -11,7 +12,7 @@ use anyhow::{bail, Result};
 pub struct Parser {
     tokens: Vec<Token>,
     idx: usize,
-    vars: Rc<RefCell<HashMap<String, Number>>>,
+    vars: Rc<RefCell<HashMap<String, Variable>>>,
 }
 
 impl Parser {
@@ -55,7 +56,22 @@ impl Parser {
         match &tk.kind {
             TokenKind::Number(n) => {
                 self.select_next();
-                Ok(Box::new(NumberNode::new(*n)))
+                Ok(Box::new(NumberLiteralNode::new(*n)))
+            }
+
+            TokenKind::String(s) => {
+                self.select_next();
+                Ok(Box::new(StringLiteralNode::new(s.clone())))
+            }
+
+            TokenKind::True => {
+                self.select_next();
+                Ok(Box::new(BoolLiteralNode::new(true)))
+            }
+
+            TokenKind::False => {
+                self.select_next();
+                Ok(Box::new(BoolLiteralNode::new(false)))
             }
 
             TokenKind::Identifier(name) => {
@@ -74,6 +90,7 @@ impl Parser {
                     Op::Not => UnaryNodeKind::Not,
                     _ => bail!("Expected '+' or '-' or '!' found '{}'", op),
                 };
+
                 Ok(Box::new(UnaryNode::new(kind, self.parse_factor()?)))
             }
 
@@ -96,6 +113,9 @@ impl Parser {
             | TokenKind::ParenthesisClose
             | TokenKind::BracketOpen
             | TokenKind::BracketClose
+            | TokenKind::TypeInt
+            | TokenKind::TypeString
+            | TokenKind::TypeBool
             | TokenKind::SemiColon
             | TokenKind::Assign
             | TokenKind::While
@@ -118,7 +138,7 @@ impl Parser {
                 TokenKind::Op(op) => {
                     match op {
                         Op::Div | Op::Mul => {
-                            c = Box::new(BinaryNode::new(op, c, self.parse_factor()?));
+                            c = Box::new(BinaryNode::new(op, self.parse_factor()?, c));
                         }
 
                         _ => break,
@@ -139,7 +159,7 @@ impl Parser {
                 TokenKind::Op(op) => {
                     match op {
                         Op::Add | Op::Sub => {
-                            c = Box::new(BinaryNode::new(op, c, self.parse_term()?));
+                            c = Box::new(BinaryNode::new(op, self.parse_term()?, c));
                         }
                         _ => break,
                     };
@@ -174,6 +194,39 @@ impl Parser {
     fn parse_command(&mut self) -> Result<Box<dyn Node>> {
         let tk = self.cur_token()?;
         let ret = match &tk.kind {
+            TokenKind::TypeInt | TokenKind::TypeBool | TokenKind::TypeString => {
+                let ntk = self.next_token()?;
+                if let TokenKind::Identifier(name) = &ntk.kind {
+                    let kind = match tk.kind {
+                        TokenKind::TypeInt => VariableKind::Number,
+                        TokenKind::TypeBool => VariableKind::Bool,
+                        TokenKind::TypeString => VariableKind::String,
+                        _ => unreachable!(),
+                    };
+
+                    let ntk = self.next_token()?;
+                    if ntk.kind == TokenKind::Assign {
+                        let node = self.parse_cond()?;
+                        // self.select_next(); // WARNING check if necessary
+
+                        let v: Box<dyn Node> = match tk.kind {
+                            TokenKind::TypeInt => Box::new(NumberNode::new(node)),
+                            TokenKind::TypeBool => Box::new(StringNode::new(node)),
+                            TokenKind::TypeString => Box::new(BoolNode::new(node)),
+                            _ => unreachable!(),
+                        };
+                        Box::new(DeclareNode::new(name.clone(), Some(v), kind, &self.vars))
+                    } else {
+                        self.select_prev();
+
+                        Box::new(DeclareNode::new(name.clone(), None, kind, &self.vars))
+                    }
+                    // Box::new(DeclareNode::new(name.clone(), None))
+                    // FIXME None
+                } else {
+                    bail!("Expected identifier after {}, got {}", tk.kind, ntk.kind)
+                }
+            }
             TokenKind::Identifier(name) => {
                 let ntk = self.next_token()?;
                 let r: Box<dyn Node> = match ntk.kind {
@@ -200,7 +253,7 @@ impl Parser {
 
                 let ntk = self.cur_token()?;
                 if ntk.kind != TokenKind::ParenthesisClose {
-                    bail!("Expected ')' closing if");
+                    bail!("Expected ')' closing if, got {}", ntk);
                 }
                 self.select_next();
 
@@ -242,7 +295,7 @@ impl Parser {
             }
             _ => bail!(
                 "Expected line to be started with variable/function call, got {}",
-                tk.kind
+                tk
             ),
         };
 
@@ -325,5 +378,9 @@ where
         bail!("Finished parsing but not EOF")
     }
 
-    Ok(tree.eval())
+    match tree.eval() {
+        VariableData::Number(n) => Ok(n),
+        VariableData::Bool(b) => Ok(b as Number),
+        _ => bail!("Wrong type"),
+    }
 }

@@ -10,7 +10,6 @@ pub type Number = i64;
 pub enum TokenKind {
     Number(Number),
     CondOp(CondOp),
-    // BoolOp(BoolOp),
     Assign,
     Op(Op),
     ParenthesisOpen,
@@ -18,9 +17,15 @@ pub enum TokenKind {
     BracketOpen,
     BracketClose,
     Identifier(String),
+    String(String),
     If,
     Else,
     While,
+    TypeInt,
+    TypeBool,
+    TypeString,
+    True,
+    False,
     SemiColon,
     EOF,
 }
@@ -35,7 +40,10 @@ impl fmt::Display for TokenKind {
                 Number(n) => n.to_string(),
                 Op(op) => op.to_string(),
                 CondOp(cop) => cop.to_string(),
-                // BoolOp(bop) => bop.to_string(),
+                TypeInt => "int".to_string(),
+                TypeBool => "bool".to_string(),
+                TypeString => "string".to_string(),
+                String(s) => format!("\"{}\"", s.clone()),
                 ParenthesisOpen => "(".into(),
                 ParenthesisClose => ")".into(),
                 BracketOpen => "{".into(),
@@ -47,6 +55,8 @@ impl fmt::Display for TokenKind {
                 While => "While".into(),
                 SemiColon => ";".into(),
                 EOF => "EOF".into(),
+                True => "true".into(),
+                False => "false".into(),
             },
         )
     }
@@ -66,6 +76,12 @@ impl Token {
             col,
             kind: token_type,
         }
+    }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} @ {}:{}", self.kind, self.line, self.col)
     }
 }
 
@@ -91,6 +107,7 @@ enum TokenizerState {
     Parenthesis,
     Bracket,
     Text,
+    String,
     SemiColon,
 }
 
@@ -112,6 +129,8 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
     let mut parenthesis_count: u32 = 0;
     let mut bracket_count: u32 = 0;
 
+    let mut string_quote = false;
+
     let determine_state = |state: &mut TokenizerState, c: char| {
         let prev_state = *state;
         *state = match c {
@@ -124,6 +143,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
             c if is_operator_char(c) => TokenizerState::Op,
             c if (c == '(' || c == ')') => TokenizerState::Parenthesis,
             c if (c == '{' || c == '}') => TokenizerState::Bracket,
+            c if (c == '"') => TokenizerState::String,
             _ => bail!("Unparsable char '{}'", c),
         };
         Ok(prev_state != *state)
@@ -142,7 +162,10 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
 
         let prev_state = state;
 
-        if (c.is_whitespace() || c == '\0' || c == '\n') && state != TokenizerState::Comment {
+        if (c.is_whitespace() || c == '\0' || c == '\n')
+            && state != TokenizerState::Comment
+            && state != TokenizerState::String
+        {
             state = TokenizerState::None;
         } else {
             match state {
@@ -171,6 +194,16 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
                     _ => buffer.clear(),
                 },
 
+                TokenizerState::String => match c {
+                    '"' => {
+                        if !string_quote {
+                            string_quote = true;
+                            state = TokenizerState::None;
+                        }
+                    }
+                    _ => buffer.push(PreToken::new(line, col, c)),
+                },
+
                 TokenizerState::Text => {
                     if determine_state(&mut state, c)? {
                         if state == TokenizerState::Number {
@@ -189,6 +222,13 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
         if prev_state != state {
             match prev_state {
                 TokenizerState::None | TokenizerState::Comment => {}
+
+                TokenizerState::String => {
+                    string_quote = false;
+                    let s = buffer.iter().map(|tk| tk.c).collect::<String>();
+                    let tk = buffer[0]; // Will crash if buffer has no elements
+                    tokens.push(Token::new(tk.line, tk.col, TokenKind::String(s)))
+                }
 
                 TokenizerState::Op => {
                     let mut it = buffer.iter().peekable().into_iter();
@@ -292,6 +332,11 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
                             "if" => TokenKind::If,
                             "else" => TokenKind::Else,
                             "while" => TokenKind::While,
+                            "int" => TokenKind::TypeInt,
+                            "bool" => TokenKind::TypeBool,
+                            "string" => TokenKind::TypeString,
+                            "true" => TokenKind::True,
+                            "false" => TokenKind::False,
                             _ => TokenKind::Identifier(s),
                         };
                         let tk = buffer[0];
@@ -312,7 +357,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
         }
 
         match state {
-            TokenizerState::None | TokenizerState::Comment => {}
+            TokenizerState::None | TokenizerState::Comment | TokenizerState::String => {}
             _ => buffer.push(PreToken::new(line, col, c)),
         }
     }
@@ -322,7 +367,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
     }
 
     if parenthesis_count > 0 {
-        bail!("Unclosed parenthesis: {}", parenthesis_count);
+        bail!("Unclosed parenthesis");
     }
 
     if bracket_count > 0 {
@@ -330,5 +375,6 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
     }
 
     tokens.push(Token::new(line, col, TokenKind::EOF));
+    // Ok(dbg!(tokens))
     Ok(tokens)
 }
