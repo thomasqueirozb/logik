@@ -1,3 +1,4 @@
+mod assembler;
 mod ast;
 mod operator;
 mod parser;

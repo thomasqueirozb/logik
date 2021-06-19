@@ -1,3 +1,4 @@
+use crate::assembler::Assembler;
 use crate::ast::*;
 use crate::operator::Op;
 use crate::token::*;
@@ -27,6 +28,13 @@ impl Parser {
     pub fn parse(tokens: Vec<Token>) -> Result<()> {
         let mut parser = Parser::new(tokens);
 
+        #[cfg(not(feature = "not v3.0.0"))] // So code for functions does not compile for now
+        {
+            parser.parse_func_def()?;
+            let mut a = Assembler::new(String::from("base.asm"), &parser.funcs);
+            a.assemble();
+        }
+        #[cfg(feature = "not v3.0.0")]
         parser.parse_func_def()?.eval(&mut HashMap::new());
         Ok(())
     }
@@ -358,6 +366,21 @@ impl Parser {
     }
 
     fn parse_func_def(&mut self) -> Result<FuncCallNode> {
+        #[cfg(not(feature = "not v3.0.0"))] // So code for functions does not compile for now
+        {
+            let func = FuncDefNode::new(
+                TokenKind::TypeNumber.into(),
+                "main".to_string(),
+                vec![],
+                self.parse_block()?,
+            );
+            self.funcs.borrow_mut().insert("main".to_string(), func);
+
+            let fc = FuncCallNode::new("main".to_string(), vec![], &self.funcs);
+            return Ok(fc);
+        }
+
+        #[cfg(feature = "not v3.0.0")]
         loop {
             let tk = self.next_token()?;
             match tk.kind {
@@ -413,8 +436,9 @@ impl Parser {
             }
         }
 
+        #[cfg(feature = "not v3.0.0")]
         let fc = FuncCallNode::new("main".to_string(), vec![], &self.funcs);
-
+        #[cfg(feature = "not v3.0.0")]
         Ok(fc)
     }
 }

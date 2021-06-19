@@ -82,37 +82,6 @@ impl CondOp {
     }
 }
 
-// #[derive(Debug, Copy, Clone, PartialEq)]
-// pub enum BoolOp {
-//     And,
-//     Or,
-// }
-
-// impl fmt::Display for BoolOp {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(
-//             f,
-//             "{}",
-//             match self {
-//                 BoolOp::And => "&&",
-//                 BoolOp::Or => "||",
-//             },
-//         )
-//     }
-// }
-
-// impl BoolOp {
-//     pub fn from_chars(c1: char, c2: char) -> Option<Self> {
-//         let pair = (c1, c2);
-//         use BoolOp::*;
-//         match pair {
-//             ('&', '&') => Some(And),
-//             ('|', '|') => Some(Or),
-//             _ => None,
-//         }
-//     }
-// }
-
 impl Op {
     pub fn from_char(c: char) -> Option<Self> {
         use Op::*;
@@ -138,6 +107,16 @@ impl Op {
             Op::Div => lhs / rhs,
             Op::Add => lhs + rhs,
             Op::Sub => lhs - rhs,
+            Op::Not => unimplemented!(),
+        }
+    }
+
+    pub fn assemble<'a>(self) -> &'a str {
+        match self {
+            Op::Mul => "imul ebx\nmov ebx, eax",
+            Op::Div => "mov edx, 0\nidiv ebx\nmov ebx, eax",
+            Op::Add => "add eax, ebx\nmov ebx, eax",
+            Op::Sub => "sub eax, ebx\nmov ebx, eax",
             Op::Not => unimplemented!(),
         }
     }

@@ -1,3 +1,4 @@
+use crate::assembler::Assembler;
 use crate::operator::{CondOp, Op};
 use crate::token::Number;
 use crate::variable::*;
@@ -5,11 +6,18 @@ use crate::variable::*;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::fmt::Debug;
 use std::rc::Rc;
 
 pub trait Node: Debug + Any {
     fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData;
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    );
 
     fn as_any(&self) -> &dyn Any;
 }
@@ -63,6 +71,20 @@ impl Node for BinaryNode {
 
         self.op.execute(n1, n2).into()
     }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        self.left_child.assemble(assembler, vars, ebp_offset);
+        assembler.push_line("push ebx");
+        self.right_child.assemble(assembler, vars, ebp_offset);
+        assembler.push_line("pop eax");
+
+        assembler.push_line(self.op.assemble());
+    }
 }
 
 #[derive(Debug)]
@@ -91,6 +113,7 @@ impl Node for UnaryNode {
     }
     fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
         let eval = self.child.eval(vars);
+
         match eval {
             VariableData::Number(n) => {
                 let n = match &self.kind {
@@ -107,6 +130,20 @@ impl Node for UnaryNode {
                 UnaryNodeKind::Not => VariableData::Bool(!b),
             },
             _ => unreachable!(),
+        }
+    }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        self.child.assemble(assembler, vars, ebp_offset);
+        match self.kind {
+            UnaryNodeKind::Pos => {}
+            UnaryNodeKind::Neg => assembler.push_line("xor eax, eax\nsub eax, ebx\nmov eax, ebx"),
+            UnaryNodeKind::Not => assembler.push_line("not ebx"),
         }
     }
 }
@@ -134,6 +171,15 @@ impl Node for NumberNode {
             _ => panic!("NumberNode"),
         }
     }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        self.child.assemble(assembler, vars, ebp_offset);
+    }
 }
 
 #[derive(Debug)]
@@ -154,6 +200,15 @@ impl Node for NumberLiteralNode {
     fn eval(&self, _vars: &mut HashMap<String, Variable>) -> VariableData {
         VariableData::Number(self.value)
     }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        _vars: &mut HashMap<String, (VariableKind, usize)>,
+        _ebp_offset: &mut usize,
+    ) {
+        assembler.push_line(format!("mov ebx, {}", self.value).as_str())
+    }
 }
 
 #[derive(Debug)]
@@ -173,6 +228,21 @@ impl Node for SimpleVariableNode {
     }
     fn eval(&self, _vars: &mut HashMap<String, Variable>) -> VariableData {
         self.value.clone()
+    }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        _vars: &mut HashMap<String, (VariableKind, usize)>,
+        _ebp_offset: &mut usize,
+    ) {
+        let n = match &self.value {
+            VariableData::String(_) => panic!("Cannot convert String to Number"),
+            VariableData::Number(n) => *n,
+            VariableData::Bool(b) => *b as Number,
+            VariableData::None => panic!("Cannot convert None to Number"),
+        };
+        assembler.push_line(format!("mov ebx, {}", n).as_str());
     }
 }
 
@@ -199,6 +269,14 @@ impl Node for BoolNode {
             _ => panic!("BoolNode"),
         }
     }
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        self.child.assemble(assembler, vars, ebp_offset);
+    }
 }
 
 #[derive(Debug)]
@@ -218,6 +296,16 @@ impl Node for BoolLiteralNode {
     }
     fn eval(&self, _vars: &mut HashMap<String, Variable>) -> VariableData {
         VariableData::Bool(self.value)
+    }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        _vars: &mut HashMap<String, (VariableKind, usize)>,
+        _ebp_offset: &mut usize,
+    ) {
+        let n: Number = self.value.try_into().unwrap();
+        assembler.push_line(format!("mov ebx, {}", n).as_str());
     }
 }
 
@@ -244,6 +332,15 @@ impl Node for StringNode {
             _ => panic!("StringNode"),
         }
     }
+
+    fn assemble(
+        &self,
+        _assembler: &mut Assembler,
+        _vars: &mut HashMap<String, (VariableKind, usize)>,
+        _ebp_offset: &mut usize,
+    ) {
+        panic!();
+    }
 }
 
 #[derive(Debug)]
@@ -263,6 +360,14 @@ impl Node for StringLiteralNode {
     }
     fn eval(&self, _vars: &mut HashMap<String, Variable>) -> VariableData {
         VariableData::String(self.value.clone())
+    }
+    fn assemble(
+        &self,
+        _assembler: &mut Assembler,
+        _vars: &mut HashMap<String, (VariableKind, usize)>,
+        _ebp_offset: &mut usize,
+    ) {
+        panic!();
     }
 }
 
@@ -328,6 +433,27 @@ impl Node for DeclareNode {
 
         VariableData::None
     }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        assembler.push_line("push DWORD 0");
+
+        if let Some(e) = &self.expression {
+            e.assemble(assembler, vars, ebp_offset);
+        }
+
+        *ebp_offset += 4;
+
+        vars.insert(self.name.clone(), (self.kind, *ebp_offset));
+
+        if self.expression.is_some() {
+            assembler.push_line(format!("mov [ebp - {}], ebx", ebp_offset).as_str());
+        }
+    }
 }
 
 // Assign Node
@@ -358,6 +484,19 @@ impl Node for AssignNode {
 
         VariableData::None
     }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        self.expression.assemble(assembler, vars, ebp_offset);
+
+        let (_, offset) = vars.get(&self.name).unwrap();
+
+        assembler.push_line(format!("mov [ebp - {}], ebx", offset).as_str());
+    }
 }
 
 // Variable Node
@@ -383,6 +522,17 @@ impl Node for VariableNode {
 
         let val = val.expect("variable used before assignment");
         val.data.clone().unwrap()
+    }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        _ebp_offset: &mut usize,
+    ) {
+        let (_, offset) = vars.get(&self.name).unwrap();
+
+        assembler.push_line(format!("mov ebx, [ebp - {}]", offset).as_str());
     }
 }
 
@@ -427,6 +577,30 @@ impl Node for CondNode {
         };
         VariableData::Bool(b)
     }
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        self.left_child.assemble(assembler, vars, ebp_offset);
+        assembler.push_line("push ebx");
+        self.right_child.assemble(assembler, vars, ebp_offset);
+        assembler.push_line("pop eax");
+        assembler.push_line("cmp eax, ebx");
+
+        let s = match self.cond {
+            CondOp::LT => "call binop_jl",
+            CondOp::LEQ => "call binop_jle",
+            CondOp::GT => "call binop_jg",
+            CondOp::GEQ => "call binop_jge",
+            CondOp::EQ => "call binop_je",
+            CondOp::NEQ => "call binop_jne",
+            CondOp::And => "and eax, ebx",
+            CondOp::Or => "or ebx, eax",
+        };
+        assembler.push_line(s);
+    }
 }
 
 // If Node
@@ -464,6 +638,32 @@ impl Node for IfNode {
             VariableData::None
         }
     }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        self.cond.assemble(assembler, vars, ebp_offset);
+        assembler.push_line("cmp ebx, False");
+
+        let id = assembler.next_id();
+        if self.else_child.is_some() {
+            assembler.push_line(format!("je else_{}", id).as_str());
+        } else {
+            assembler.push_line(format!("je end_if_{}", id).as_str());
+        }
+
+        self.if_child.assemble(assembler, vars, ebp_offset);
+
+        if let Some(e) = &self.else_child {
+            assembler.push_line(format!("jmp end_if_{}", id).as_str());
+            assembler.push_line(format!("else_{}:", id).as_str());
+            e.assemble(assembler, vars, ebp_offset);
+        }
+        assembler.push_line(format!("end_if_{}:", id).as_str());
+    }
 }
 
 // While Node
@@ -488,6 +688,22 @@ impl Node for WhileNode {
             self.child.eval(vars);
         }
         VariableData::None
+    }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        let id = assembler.next_id();
+        assembler.push_line(format!("while_{}:", id).as_str());
+        self.cond.assemble(assembler, vars, ebp_offset);
+        assembler.push_line("cmp ebx, False");
+        assembler.push_line(format!("je while_end_{}", id).as_str());
+        self.child.assemble(assembler, vars, ebp_offset);
+        assembler.push_line(format!("jmp while_{}", id).as_str());
+        assembler.push_line(format!("while_end_{}:", id).as_str());
     }
 }
 
@@ -519,6 +735,16 @@ impl Node for BlockNode {
             }
         }
         VariableData::None
+    }
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        for child in self.children.iter() {
+            child.assemble(assembler, vars, ebp_offset);
+        }
     }
 }
 
@@ -614,6 +840,30 @@ impl Node for FuncCallNode {
             }
         }
     }
+
+    fn assemble(
+        &self,
+        assembler: &mut Assembler,
+        vars: &mut HashMap<String, (VariableKind, usize)>,
+        ebp_offset: &mut usize,
+    ) {
+        let fborrow = self.funcs.borrow(); // NOTE: borrow
+
+        match self.name.as_ref() {
+            "println" | "print" => {
+                let borrow = self.params.borrow();
+                assert_eq!(borrow.len(), 1);
+                borrow[0].assemble(assembler, vars, ebp_offset);
+                assembler.push_line("push ebx\ncall print\npop ebx");
+            }
+            _ => {
+                let func = fborrow.get(&self.name).unwrap();
+                for child in func.code.children.iter() {
+                    child.assemble(assembler, vars, ebp_offset);
+                }
+            }
+        }
+    }
 }
 
 // Return Node
@@ -638,6 +888,14 @@ impl Node for ReturnNode {
         } else {
             VariableData::Number(1) // WARNING FIXME
         }
+    }
+    fn assemble(
+        &self,
+        _assembler: &mut Assembler,
+        _vars: &mut HashMap<String, (VariableKind, usize)>,
+        _ebp_offset: &mut usize,
+    ) {
+        unimplemented!()
     }
 }
 
