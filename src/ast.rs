@@ -2,15 +2,20 @@ use crate::operator::{CondOp, Op};
 use crate::token::Number;
 use crate::variable::*;
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::rc::Rc;
 
-pub trait Node {
-    fn eval(&self) -> VariableData;
+pub trait Node: Debug + Any {
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData;
+
+    fn as_any(&self) -> &dyn Any;
 }
 
 // Binary Node
+#[derive(Debug)]
 pub struct BinaryNode {
     op: Op,
     left_child: Box<dyn Node>,
@@ -28,14 +33,17 @@ impl BinaryNode {
 }
 
 impl Node for BinaryNode {
-    fn eval(&self) -> VariableData {
-        let n1 = self.left_child.eval();
-        let n2 = self.right_child.eval();
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        let n1 = self.left_child.eval(vars);
+        let n2 = self.right_child.eval(vars);
 
         // println!(
         //     "n1 {:?} n2 {:?}",
-        //     self.left_child.eval(),
-        //     self.right_child.eval()
+        //     self.left_child.eval(vars),
+        //     self.right_child.eval(vars)
         // );
 
         let n2 = match n2 {
@@ -57,12 +65,15 @@ impl Node for BinaryNode {
     }
 }
 
+#[derive(Debug)]
 pub enum UnaryNodeKind {
     Pos,
     Neg,
     Not,
 }
+
 // Unary Node
+#[derive(Debug)]
 pub struct UnaryNode {
     child: Box<dyn Node>,
     kind: UnaryNodeKind,
@@ -75,8 +86,11 @@ impl UnaryNode {
 }
 
 impl Node for UnaryNode {
-    fn eval(&self) -> VariableData {
-        let eval = self.child.eval();
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        let eval = self.child.eval(vars);
         match eval {
             VariableData::Number(n) => {
                 let n = match &self.kind {
@@ -98,6 +112,7 @@ impl Node for UnaryNode {
 }
 
 // Number Node
+#[derive(Debug)]
 pub struct NumberNode {
     child: Box<dyn Node>,
 }
@@ -109,8 +124,11 @@ impl NumberNode {
 }
 
 impl Node for NumberNode {
-    fn eval(&self) -> VariableData {
-        let v = self.child.eval();
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        let v = self.child.eval(vars);
         match v {
             VariableData::Number(_) => v,
             _ => panic!("NumberNode"),
@@ -118,6 +136,7 @@ impl Node for NumberNode {
     }
 }
 
+#[derive(Debug)]
 pub struct NumberLiteralNode {
     value: Number,
 }
@@ -129,12 +148,36 @@ impl NumberLiteralNode {
 }
 
 impl Node for NumberLiteralNode {
-    fn eval(&self) -> VariableData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, _vars: &mut HashMap<String, Variable>) -> VariableData {
         VariableData::Number(self.value)
     }
 }
 
+#[derive(Debug)]
+pub struct SimpleVariableNode {
+    value: VariableData,
+}
+
+impl SimpleVariableNode {
+    pub fn new(value: VariableData) -> Self {
+        Self { value }
+    }
+}
+
+impl Node for SimpleVariableNode {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, _vars: &mut HashMap<String, Variable>) -> VariableData {
+        self.value.clone()
+    }
+}
+
 // Bool Node
+#[derive(Debug)]
 pub struct BoolNode {
     child: Box<dyn Node>,
 }
@@ -146,8 +189,11 @@ impl BoolNode {
 }
 
 impl Node for BoolNode {
-    fn eval(&self) -> VariableData {
-        let v = self.child.eval();
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        let v = self.child.eval(vars);
         match v {
             VariableData::Bool(_) => v,
             _ => panic!("BoolNode"),
@@ -155,6 +201,7 @@ impl Node for BoolNode {
     }
 }
 
+#[derive(Debug)]
 pub struct BoolLiteralNode {
     value: bool,
 }
@@ -166,12 +213,16 @@ impl BoolLiteralNode {
 }
 
 impl Node for BoolLiteralNode {
-    fn eval(&self) -> VariableData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, _vars: &mut HashMap<String, Variable>) -> VariableData {
         VariableData::Bool(self.value)
     }
 }
 
 // String Node
+#[derive(Debug)]
 pub struct StringNode {
     child: Box<dyn Node>,
 }
@@ -183,8 +234,11 @@ impl StringNode {
 }
 
 impl Node for StringNode {
-    fn eval(&self) -> VariableData {
-        let v = self.child.eval();
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        let v = self.child.eval(vars);
         match v {
             VariableData::String(_) => v,
             _ => panic!("StringNode"),
@@ -192,6 +246,7 @@ impl Node for StringNode {
     }
 }
 
+#[derive(Debug)]
 pub struct StringLiteralNode {
     value: String,
 }
@@ -203,42 +258,40 @@ impl StringLiteralNode {
 }
 
 impl Node for StringLiteralNode {
-    fn eval(&self) -> VariableData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, _vars: &mut HashMap<String, Variable>) -> VariableData {
         VariableData::String(self.value.clone())
     }
 }
 
 // Declare Node
+#[derive(Debug)]
 pub struct DeclareNode {
     name: String,
     expression: Option<Box<dyn Node>>,
     kind: VariableKind,
-    vars: Rc<RefCell<HashMap<String, Variable>>>,
 }
 impl DeclareNode {
-    pub fn new(
-        name: String,
-        expression: Option<Box<dyn Node>>,
-        kind: VariableKind,
-        vars: &Rc<RefCell<HashMap<String, Variable>>>,
-    ) -> Self {
+    pub fn new(name: String, expression: Option<Box<dyn Node>>, kind: VariableKind) -> Self {
         Self {
             name,
             expression,
             kind,
-            vars: vars.clone(),
         }
     }
 }
 
 impl Node for DeclareNode {
-    fn eval(&self) -> VariableData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
         let eval = match &self.expression {
-            Some(ex) => Some(ex.eval()),
+            Some(ex) => Some(ex.eval(vars)),
             None => None,
         };
-
-        let mut borrow = self.vars.borrow_mut(); // NOTE borrow_mut
 
         let v = match eval {
             Some(VariableData::String(_)) => {
@@ -270,103 +323,71 @@ impl Node for DeclareNode {
             }
             None => Variable::new(self.kind, eval),
         };
-        borrow.insert(self.name.clone(), v);
+        vars.insert(self.name.clone(), v);
+        // println!("vars {:#?}", vars);
 
         VariableData::None
     }
 }
 
 // Assign Node
+#[derive(Debug)]
 pub struct AssignNode {
     name: String,
     expression: Box<dyn Node>,
-    vars: Rc<RefCell<HashMap<String, Variable>>>,
 }
 impl AssignNode {
-    pub fn new(
-        name: String,
-        expression: Box<dyn Node>,
-        vars: &Rc<RefCell<HashMap<String, Variable>>>,
-    ) -> Self {
-        Self {
-            name,
-            expression,
-            vars: vars.clone(),
-        }
+    pub fn new(name: String, expression: Box<dyn Node>) -> Self {
+        Self { name, expression }
     }
 }
 
 impl Node for AssignNode {
-    fn eval(&self) -> VariableData {
-        let eval = self.expression.eval();
-        let mut borrow = self.vars.borrow_mut(); // NOTE borrow_mut
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        let eval = self.expression.eval(vars);
 
-        let var = borrow.get_mut(&self.name).unwrap();
+        let var = vars.get_mut(&self.name).unwrap();
 
         let kind = var.kind;
 
-        let v = match eval {
-            VariableData::String(_) => {
-                assert_eq!(kind, VariableKind::String);
-                eval
-            }
-            VariableData::Number(n) => {
-                if kind == VariableKind::Number {
-                    eval
-                } else if kind == VariableKind::Bool {
-                    VariableData::Bool(n != 0)
-                } else {
-                    panic!()
-                }
-            }
-
-            VariableData::Bool(b) => {
-                if kind == VariableKind::Number {
-                    VariableData::Number(b as Number)
-                } else if kind == VariableKind::Bool {
-                    eval
-                } else {
-                    panic!()
-                }
-            }
-            VariableData::None => {
-                assert_eq!(kind, VariableKind::None);
-                eval
-            }
-        };
+        let v = Variable::match_data_kind(eval, kind);
         var.data = Some(v);
-        // *r = eval;
 
         VariableData::None
     }
 }
 
 // Variable Node
+#[derive(Debug)]
 pub struct VariableNode {
     name: String,
-    vars: Rc<RefCell<HashMap<String, Variable>>>,
 }
 impl VariableNode {
-    pub fn new(name: String, vars: &Rc<RefCell<HashMap<String, Variable>>>) -> Self {
-        Self {
-            name,
-            vars: vars.clone(),
-        }
+    pub fn new(name: String) -> Self {
+        Self { name }
     }
 }
 
 impl Node for VariableNode {
-    fn eval(&self) -> VariableData {
-        let borrow = self.vars.borrow(); // NOTE borrow
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        let val = vars.get(&self.name);
+        // if val.is_none() {
+        //     println!("none {:?}", vars);
+        // }
 
-        let val = borrow.get(&self.name);
-
-        let val = val.expect("variable used before assignment"); // FIXME remove expect/ make eval return a result
+        let val = val.expect("variable used before assignment");
         val.data.clone().unwrap()
     }
 }
 
 // Cond Node
+#[derive(Debug)]
 pub struct CondNode {
     cond: CondOp,
     left_child: Box<dyn Node>,
@@ -384,21 +405,24 @@ impl CondNode {
 }
 
 impl Node for CondNode {
-    fn eval(&self) -> VariableData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
         let b = match self.cond {
-            CondOp::LT => self.left_child.eval() < self.right_child.eval(),
-            CondOp::LEQ => self.left_child.eval() <= self.right_child.eval(),
-            CondOp::GT => self.left_child.eval() > self.right_child.eval(),
-            CondOp::GEQ => self.left_child.eval() >= self.right_child.eval(),
-            CondOp::EQ => self.left_child.eval() == self.right_child.eval(),
-            CondOp::NEQ => self.left_child.eval() != self.right_child.eval(),
+            CondOp::LT => self.left_child.eval(vars) < self.right_child.eval(vars),
+            CondOp::LEQ => self.left_child.eval(vars) <= self.right_child.eval(vars),
+            CondOp::GT => self.left_child.eval(vars) > self.right_child.eval(vars),
+            CondOp::GEQ => self.left_child.eval(vars) >= self.right_child.eval(vars),
+            CondOp::EQ => self.left_child.eval(vars) == self.right_child.eval(vars),
+            CondOp::NEQ => self.left_child.eval(vars) != self.right_child.eval(vars),
             CondOp::And => {
-                self.left_child.eval() != VariableData::Number(0)
-                    && self.right_child.eval() != VariableData::Number(0)
+                self.left_child.eval(vars) != VariableData::Number(0)
+                    && self.right_child.eval(vars) != VariableData::Number(0)
             }
             CondOp::Or => {
-                self.left_child.eval() != VariableData::Number(0)
-                    || self.right_child.eval() != VariableData::Number(0)
+                self.left_child.eval(vars) != VariableData::Number(0)
+                    || self.right_child.eval(vars) != VariableData::Number(0)
             }
         };
         VariableData::Bool(b)
@@ -406,6 +430,7 @@ impl Node for CondNode {
 }
 
 // If Node
+#[derive(Debug)]
 pub struct IfNode {
     cond: Box<dyn Node>,
     if_child: Box<dyn Node>,
@@ -427,17 +452,22 @@ impl IfNode {
 }
 
 impl Node for IfNode {
-    fn eval(&self) -> VariableData {
-        if self.cond.eval() != VariableData::Number(0) {
-            self.if_child.eval();
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        if self.cond.eval(vars) != VariableData::Number(0) {
+            self.if_child.eval(vars)
         } else if let Some(child) = &self.else_child {
-            child.eval();
+            child.eval(vars)
+        } else {
+            VariableData::None
         }
-        VariableData::None
     }
 }
 
 // While Node
+#[derive(Debug)]
 pub struct WhileNode {
     cond: Box<dyn Node>,
     child: Box<dyn Node>,
@@ -450,15 +480,19 @@ impl WhileNode {
 }
 
 impl Node for WhileNode {
-    fn eval(&self) -> VariableData {
-        while self.cond.eval() != VariableData::Number(0) {
-            self.child.eval();
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        while self.cond.eval(vars) != VariableData::Number(0) {
+            self.child.eval(vars);
         }
         VariableData::None
     }
 }
 
 // Block Node
+#[derive(Debug)]
 pub struct BlockNode {
     children: Vec<Box<dyn Node>>,
 }
@@ -470,31 +504,57 @@ impl BlockNode {
 }
 
 impl Node for BlockNode {
-    fn eval(&self) -> VariableData {
-        for child in &self.children {
-            child.eval();
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        for child in self.children.iter() {
+            let any_child = child.as_any();
+
+            let return_node = any_child.downcast_ref::<ReturnNode>().is_some();
+            let v = child.eval(vars);
+
+            if return_node || v != VariableData::None {
+                return v;
+            }
         }
         VariableData::None
     }
 }
 
 // Func Node
-pub struct FuncNode {
+#[derive(Debug)]
+pub struct FuncCallNode {
     name: String,
-    params: Vec<Box<dyn Node>>,
+    params: Rc<RefCell<Vec<Box<dyn Node>>>>,
+    funcs: Rc<RefCell<HashMap<String, FuncDefNode>>>,
 }
 
-impl FuncNode {
-    pub fn new(name: String, params: Vec<Box<dyn Node>>) -> Self {
-        FuncNode { name, params }
+impl FuncCallNode {
+    pub fn new(
+        name: String,
+        params: Vec<Box<dyn Node>>,
+        funcs: &Rc<RefCell<HashMap<String, FuncDefNode>>>,
+    ) -> Self {
+        FuncCallNode {
+            name,
+            params: Rc::new(RefCell::new(params)),
+            funcs: funcs.clone(),
+        }
     }
 }
 
-impl Node for FuncNode {
-    fn eval(&self) -> VariableData {
+impl Node for FuncCallNode {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
         match self.name.as_ref() {
             "println" => {
-                let eval = self.params[0].eval();
+                let borrow = self.params.borrow();
+                assert_eq!(borrow.len(), 1);
+                let eval = borrow[0].eval(vars);
                 match eval {
                     VariableData::Number(n) => println!("{}", n),
                     VariableData::Bool(b) => println!("{}", b as Number),
@@ -504,6 +564,8 @@ impl Node for FuncNode {
                 VariableData::None
             }
             "readln" => {
+                let borrow = self.params.borrow();
+                assert_eq!(borrow.len(), 0);
                 use std::io;
 
                 let mut input = String::new();
@@ -511,7 +573,95 @@ impl Node for FuncNode {
                 let input: Number = input.trim().parse().unwrap(); // Maybe do ? here
                 VariableData::Number(input)
             }
-            _ => unimplemented!(),
+            _ => {
+                let mut new_vars = HashMap::new();
+                let fborrow = self.funcs.borrow(); // NOTE: borrow
+                let pborrow = self.params.borrow(); // NOTE: borrow
+                if let Some(func) = fborrow.get(&self.name) {
+                    assert_eq!(pborrow.len(), func.args.len());
+                    let plen = pborrow.len();
+
+                    for idx in 0..plen {
+                        let param = &pborrow[idx]; //.pop().unwrap();
+                        let (arg_kind, arg_name) = &func.args[idx];
+                        let param = param.eval(vars);
+
+                        let d_node = DeclareNode::new(
+                            arg_name.clone(),
+                            Some(Box::new(SimpleVariableNode::new(param))),
+                            *arg_kind,
+                        );
+
+                        d_node.eval(&mut new_vars);
+                    }
+
+                    for child in func.code.children.iter() {
+                        let any_child = child.as_any();
+
+                        let return_node = any_child.downcast_ref::<ReturnNode>().is_some();
+                        let func_node = any_child.downcast_ref::<FuncCallNode>().is_some();
+
+                        let v = child.eval(&mut new_vars);
+
+                        if return_node || (!func_node && v != VariableData::None) {
+                            return Variable::match_data_kind(v, func.kind);
+                        }
+                    }
+                    VariableData::None
+                } else {
+                    panic!("Function not in funcs")
+                }
+            }
+        }
+    }
+}
+
+// Return Node
+#[derive(Debug)]
+pub struct ReturnNode {
+    child: Option<Box<dyn Node>>,
+}
+
+impl ReturnNode {
+    pub fn new(child: Option<Box<dyn Node>>) -> Self {
+        Self { child }
+    }
+}
+
+impl Node for ReturnNode {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn eval(&self, vars: &mut HashMap<String, Variable>) -> VariableData {
+        if let Some(c) = &self.child {
+            c.eval(vars)
+        } else {
+            VariableData::Number(1) // WARNING FIXME
+        }
+    }
+}
+
+// FuncDef Node
+#[derive(Debug)]
+pub struct FuncDefNode {
+    kind: VariableKind,
+    name: String,
+    args: Vec<(VariableKind, String)>,
+    code: BlockNode,
+}
+
+impl FuncDefNode {
+    pub fn new(
+        kind: VariableKind,
+        name: String,
+        args: Vec<(VariableKind, String)>,
+        code: BlockNode,
+    ) -> Self {
+        Self {
+            kind,
+            name,
+            args,
+            code,
         }
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "logik"
-version = "2.3.1"
+version = "2.4.0"
 authors = ["Thomas Queiroz <thomasqueirozb@gmail.com>"]
 edition = "2018"
 

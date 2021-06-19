@@ -12,7 +12,7 @@ use anyhow::{bail, Result};
 pub struct Parser {
     tokens: Vec<Token>,
     idx: usize,
-    vars: Rc<RefCell<HashMap<String, Variable>>>,
+    funcs: Rc<RefCell<HashMap<String, FuncDefNode>>>,
 }
 
 impl Parser {
@@ -20,14 +20,14 @@ impl Parser {
         Parser {
             tokens,
             idx: 0usize.wrapping_sub(1),
-            vars: Rc::new(RefCell::new(HashMap::new())),
+            funcs: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 
     pub fn parse(tokens: Vec<Token>) -> Result<()> {
         let mut parser = Parser::new(tokens);
 
-        parser.parse_block()?.eval();
+        parser.parse_func_def()?.eval(&mut HashMap::new());
         Ok(())
     }
 
@@ -77,9 +77,13 @@ impl Parser {
             TokenKind::Identifier(name) => {
                 let ntk = self.next_token()?;
                 if ntk.kind == TokenKind::ParenthesisOpen {
-                    Ok(Box::new(FuncNode::new(name.clone(), self.get_func_args()?)))
+                    Ok(Box::new(FuncCallNode::new(
+                        name.clone(),
+                        self.get_func_args()?,
+                        &self.funcs,
+                    )))
                 } else {
-                    Ok(Box::new(VariableNode::new(name.clone(), &self.vars)))
+                    Ok(Box::new(VariableNode::new(name.clone())))
                 }
             }
 
@@ -105,26 +109,25 @@ impl Parser {
                 Ok(r)
             }
 
-            TokenKind::CondOp(op) => {
-                bail!("Expected number, variable, operator or '(', found '{}'", op)
+            TokenKind::CondOp(_) => {
+                bail!("Expected number, variable, operator or '(', found {}", tk)
             }
 
             TokenKind::EOF
             | TokenKind::ParenthesisClose
             | TokenKind::BracketOpen
             | TokenKind::BracketClose
-            | TokenKind::TypeInt
+            | TokenKind::TypeNumber
             | TokenKind::TypeString
             | TokenKind::TypeBool
+            | TokenKind::Return
             | TokenKind::SemiColon
+            | TokenKind::Comma
             | TokenKind::Assign
             | TokenKind::While
             | TokenKind::If
             | TokenKind::Else => {
-                bail!(
-                    "Expected number, variable, operator or '(', found '{}'",
-                    tk.kind
-                )
+                bail!("Expected number, variable, operator or '(', found {}", tk)
             }
         }
     }
@@ -138,7 +141,7 @@ impl Parser {
                 TokenKind::Op(op) => {
                     match op {
                         Op::Div | Op::Mul => {
-                            c = Box::new(BinaryNode::new(op, self.parse_factor()?, c));
+                            c = Box::new(BinaryNode::new(op, c, self.parse_factor()?));
                         }
 
                         _ => break,
@@ -159,7 +162,7 @@ impl Parser {
                 TokenKind::Op(op) => {
                     match op {
                         Op::Add | Op::Sub => {
-                            c = Box::new(BinaryNode::new(op, self.parse_term()?, c));
+                            c = Box::new(BinaryNode::new(op, c, self.parse_term()?));
                         }
                         _ => break,
                     };
@@ -175,16 +178,26 @@ impl Parser {
     fn get_func_args(&mut self) -> Result<Vec<Box<dyn Node>>> {
         let mut v = vec![];
 
-        if self.next_token()?.kind != TokenKind::ParenthesisClose {
+        while self.cur_token()?.kind != TokenKind::ParenthesisClose {
+            if self.next_token()?.kind == TokenKind::ParenthesisClose {
+                break;
+            }
             self.select_prev();
-
             let arg = self.parse_cond()?;
             v.push(arg);
 
             let tk = self.cur_token()?;
-            if tk.kind != TokenKind::ParenthesisClose {
-                bail!("Function argument expected ')', found {}", tk.kind);
-            }
+            match tk.kind {
+                TokenKind::ParenthesisClose => break,
+                TokenKind::Comma => {
+                    if self.next_token()?.kind == TokenKind::ParenthesisClose {
+                        bail!("Function argument expected, found ')'")
+                    } else {
+                        self.select_prev();
+                    }
+                }
+                _ => bail!("Function argument expected ')', found {}", tk),
+            };
         }
         self.select_next();
 
@@ -194,11 +207,11 @@ impl Parser {
     fn parse_command(&mut self) -> Result<Box<dyn Node>> {
         let tk = self.cur_token()?;
         let ret = match &tk.kind {
-            TokenKind::TypeInt | TokenKind::TypeBool | TokenKind::TypeString => {
+            TokenKind::TypeNumber | TokenKind::TypeBool | TokenKind::TypeString => {
                 let ntk = self.next_token()?;
                 if let TokenKind::Identifier(name) = &ntk.kind {
                     let kind = match tk.kind {
-                        TokenKind::TypeInt => VariableKind::Number,
+                        TokenKind::TypeNumber => VariableKind::Number,
                         TokenKind::TypeBool => VariableKind::Bool,
                         TokenKind::TypeString => VariableKind::String,
                         _ => unreachable!(),
@@ -210,19 +223,17 @@ impl Parser {
                         // self.select_next(); // WARNING check if necessary
 
                         let v: Box<dyn Node> = match tk.kind {
-                            TokenKind::TypeInt => Box::new(NumberNode::new(node)),
+                            TokenKind::TypeNumber => Box::new(NumberNode::new(node)),
                             TokenKind::TypeBool => Box::new(StringNode::new(node)),
                             TokenKind::TypeString => Box::new(BoolNode::new(node)),
                             _ => unreachable!(),
                         };
-                        Box::new(DeclareNode::new(name.clone(), Some(v), kind, &self.vars))
+                        Box::new(DeclareNode::new(name.clone(), Some(v), kind))
                     } else {
                         self.select_prev();
 
-                        Box::new(DeclareNode::new(name.clone(), None, kind, &self.vars))
+                        Box::new(DeclareNode::new(name.clone(), None, kind))
                     }
-                    // Box::new(DeclareNode::new(name.clone(), None))
-                    // FIXME None
                 } else {
                     bail!("Expected identifier after {}, got {}", tk.kind, ntk.kind)
                 }
@@ -232,13 +243,15 @@ impl Parser {
                 let r: Box<dyn Node> = match ntk.kind {
                     TokenKind::ParenthesisOpen => {
                         // Function call
-                        Box::new(FuncNode::new(name.clone(), self.get_func_args()?))
+                        Box::new(FuncCallNode::new(
+                            name.clone(),
+                            self.get_func_args()?,
+                            &self.funcs,
+                        ))
                     }
-                    TokenKind::Assign => Box::new(AssignNode::new(
-                        name.clone(),
-                        self.parse_cond()?,
-                        &self.vars,
-                    )),
+                    TokenKind::Assign => {
+                        Box::new(AssignNode::new(name.clone(), self.parse_cond()?))
+                    }
                     _ => bail!("Expected = or (...) after {}", name),
                 };
                 r
@@ -269,7 +282,7 @@ impl Parser {
                     Box::new(IfNode::new(cond, if_child, None))
                 }
             }
-            TokenKind::BracketOpen => self.parse_block()?,
+            TokenKind::BracketOpen => Box::new(self.parse_block()?),
             TokenKind::While => {
                 let ntk = self.next_token()?;
                 if ntk.kind != TokenKind::ParenthesisOpen {
@@ -289,19 +302,25 @@ impl Parser {
                 Box::new(WhileNode::new(cond, child))
             }
 
+            TokenKind::Return => {
+                self.select_next();
+                if self.cur_token()?.kind == TokenKind::SemiColon {
+                    Box::new(ReturnNode::new(None))
+                } else {
+                    self.select_prev();
+                    Box::new(ReturnNode::new(Some(self.parse_cond()?)))
+                }
+            }
+
             TokenKind::SemiColon => {
                 self.select_next();
-                self.parse_command()? // WARNING FIXME
+                self.parse_command()?
             }
             _ => bail!(
                 "Expected line to be started with variable/function call, got {}",
                 tk
             ),
         };
-
-        // if self.cur_token()?.kind != TokenKind::SemiColon {
-        //     bail!("Command not terminated by ';'")
-        // }
 
         Ok(ret)
     }
@@ -325,7 +344,7 @@ impl Parser {
         }
     }
 
-    fn parse_block(&mut self) -> Result<Box<dyn Node>> {
+    fn parse_block(&mut self) -> Result<BlockNode> {
         let mut commands = vec![];
 
         loop {
@@ -333,25 +352,70 @@ impl Parser {
             match tk.kind {
                 TokenKind::EOF | TokenKind::BracketClose => break,
                 _ => commands.push(self.parse_command()?),
-                // // Always start with {
-                // TokenKind::BracketOpen => {
-                //     loop {
-                //         match self.next_token()?.kind {
-                //             TokenKind::BracketOpen => bail!("Open after open"), // TODO fix message
-                //             TokenKind::BracketClose => break,                   // TODO fix message
-                //             _ => commands.push(self.parse_command()?),
-                //         }
-                //     }
-                // }
-                // _ => bail!(
-                //     "Expected '{{' or EOF, got {} at {}:{}",
-                //     tk.kind,
-                //     tk.line,
-                //     tk.col
-                // ),
             }
         }
-        Ok(Box::new(BlockNode::new(commands)))
+        Ok(BlockNode::new(commands))
+    }
+
+    fn parse_func_def(&mut self) -> Result<FuncCallNode> {
+        loop {
+            let tk = self.next_token()?;
+            match tk.kind {
+                TokenKind::TypeNumber | TokenKind::TypeBool | TokenKind::TypeString => {
+                    let ntk = self.next_token()?;
+                    if let TokenKind::Identifier(func_name) = &ntk.kind {
+                        let ptk = self.next_token()?;
+                        if ptk.kind != TokenKind::ParenthesisOpen {
+                            bail!("Expected '(' got {}", ptk);
+                        }
+
+                        let mut args: Vec<(VariableKind, String)> = vec![];
+                        if self.next_token()?.kind != TokenKind::ParenthesisClose {
+                            self.select_prev();
+                            loop {
+                                let ttk = self.next_token()?;
+                                match ttk.kind {
+                                    TokenKind::TypeNumber
+                                    | TokenKind::TypeBool
+                                    | TokenKind::TypeString => {
+                                        let itk = self.next_token()?;
+                                        if let TokenKind::Identifier(id) = &itk.kind {
+                                            args.push((ttk.kind.into(), id.clone()));
+                                        } else {
+                                            bail!("no identifier after kind {}", ttk)
+                                        }
+                                    }
+                                    _ => bail!("not type after {}", func_name),
+                                };
+
+                                let ltk = self.next_token()?;
+                                match ltk.kind {
+                                    TokenKind::Comma => {}
+                                    TokenKind::ParenthesisClose => break,
+                                    _ => bail!("Expected ',' or ')' got {}", ltk),
+                                }
+                            }
+                        }
+                        self.select_next();
+                        let func = FuncDefNode::new(
+                            tk.kind.into(),
+                            func_name.clone(),
+                            args,
+                            self.parse_block()?,
+                        );
+                        self.funcs.borrow_mut().insert(func_name.clone(), func);
+                    } else {
+                        bail!("No identifier after type, {}", ntk);
+                    }
+                }
+                TokenKind::EOF => break,
+                _ => bail!("parse func def, {}", tk),
+            }
+        }
+
+        let fc = FuncCallNode::new("main".to_string(), vec![], &self.funcs);
+
+        Ok(fc)
     }
 }
 
@@ -378,7 +442,7 @@ where
         bail!("Finished parsing but not EOF")
     }
 
-    match tree.eval() {
+    match tree.eval(&mut HashMap::new()) {
         VariableData::Number(n) => Ok(n),
         VariableData::Bool(b) => Ok(b as Number),
         _ => bail!("Wrong type"),

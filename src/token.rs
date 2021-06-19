@@ -21,12 +21,14 @@ pub enum TokenKind {
     If,
     Else,
     While,
-    TypeInt,
+    TypeNumber,
     TypeBool,
     TypeString,
+    Return,
     True,
     False,
     SemiColon,
+    Comma,
     EOF,
 }
 
@@ -40,9 +42,10 @@ impl fmt::Display for TokenKind {
                 Number(n) => n.to_string(),
                 Op(op) => op.to_string(),
                 CondOp(cop) => cop.to_string(),
-                TypeInt => "int".to_string(),
+                TypeNumber => "int".to_string(),
                 TypeBool => "bool".to_string(),
                 TypeString => "string".to_string(),
+                Return => "return".to_string(),
                 String(s) => format!("\"{}\"", s.clone()),
                 ParenthesisOpen => "(".into(),
                 ParenthesisClose => ")".into(),
@@ -54,6 +57,7 @@ impl fmt::Display for TokenKind {
                 Else => "Else".into(),
                 While => "While".into(),
                 SemiColon => ";".into(),
+                Comma => ",".into(),
                 EOF => "EOF".into(),
                 True => "true".into(),
                 False => "false".into(),
@@ -109,12 +113,14 @@ enum TokenizerState {
     Text,
     String,
     SemiColon,
+    Comma,
 }
 
 impl Into<TokenKind> for TokenizerState {
     fn into(self) -> TokenKind {
         match self {
             TokenizerState::SemiColon => TokenKind::SemiColon,
+            TokenizerState::Comma => TokenKind::Comma,
             _ => unreachable!(),
         }
     }
@@ -135,6 +141,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
         let prev_state = *state;
         *state = match c {
             ';' => TokenizerState::SemiColon,
+            ',' => TokenizerState::Comma,
             c if c.is_numeric() => TokenizerState::Number,
 
             // Needs to start with alphabetic char or _ but can contain numbers after
@@ -332,11 +339,12 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
                             "if" => TokenKind::If,
                             "else" => TokenKind::Else,
                             "while" => TokenKind::While,
-                            "int" => TokenKind::TypeInt,
+                            "int" => TokenKind::TypeNumber,
                             "bool" => TokenKind::TypeBool,
                             "string" => TokenKind::TypeString,
                             "true" => TokenKind::True,
                             "false" => TokenKind::False,
+                            "return" => TokenKind::Return,
                             _ => TokenKind::Identifier(s),
                         };
                         let tk = buffer[0];
@@ -344,7 +352,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
                     }
                 }
 
-                TokenizerState::SemiColon => {
+                TokenizerState::SemiColon | TokenizerState::Comma => {
                     for tk in &buffer {
                         tokens.push(Token::new(tk.line, tk.col, prev_state.into()))
                     }
