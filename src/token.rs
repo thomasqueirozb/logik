@@ -84,7 +84,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>> {
                 },
 
                 TokenizerState::Variable => {
-                    if !determine_state(&mut state, c)? {
+                    if determine_state(&mut state, c)? {
                         if state == TokenizerState::Number {
                             state = TokenizerState::Variable;
                         }
