@@ -164,6 +164,10 @@ impl Parser {
                 }
                 Token::Equals => {
                     let val = self.parse_expression()?.eval(); // FIXME ;
+
+                    let sn: &str = name.as_ref();
+                    assert_ne!(sn, "println");
+                    assert_ne!(sn, "readln");
                     self.vars.insert(name, val);
                 }
                 _ => bail!("Expected = or (...) after {}", name),
