@@ -138,7 +138,7 @@ impl Parser {
                 TokenKind::Op(op) => {
                     match op {
                         Op::Div | Op::Mul => {
-                            c = Box::new(BinaryNode::new(op, self.parse_factor()?, c));
+                            c = Box::new(BinaryNode::new(op, c, self.parse_factor()?));
                         }
 
                         _ => break,
