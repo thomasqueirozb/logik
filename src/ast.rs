@@ -116,6 +116,10 @@ impl Node for AssignNode {
         let eval = self.expression.eval();
         let mut borrow = self.vars.borrow_mut(); // NOTE borrow_mut
 
+        let sn: &str = self.name.as_ref();
+        assert_ne!(sn, "println");
+        assert_ne!(sn, "readln");
+
         // WARNING FIXME *borrow.get_mut(&self.name).unwrap() = value
         borrow.insert(self.name.clone(), eval);
 
