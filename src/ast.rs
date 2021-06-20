@@ -428,6 +428,11 @@ impl Node for DeclareNode {
             }
             None => Variable::new(self.kind, eval),
         };
+
+        assert!(vars.get(&self.name).is_none());
+        let sn: &str = self.name.as_ref();
+        assert_ne!(sn, "println");
+        assert_ne!(sn, "readln");
         vars.insert(self.name.clone(), v);
         // println!("vars {:#?}", vars);
 
