@@ -272,13 +272,20 @@ pub struct DeclareNode {
     name: String,
     expression: Option<Box<dyn Node>>,
     kind: VariableKind,
+    funcs: Rc<RefCell<HashMap<String, FuncDefNode>>>,
 }
 impl DeclareNode {
-    pub fn new(name: String, expression: Option<Box<dyn Node>>, kind: VariableKind) -> Self {
+    pub fn new(
+        name: String,
+        expression: Option<Box<dyn Node>>,
+        kind: VariableKind,
+        funcs: &Rc<RefCell<HashMap<String, FuncDefNode>>>,
+    ) -> Self {
         Self {
             name,
             expression,
             kind,
+            funcs: funcs.clone(),
         }
     }
 }
@@ -323,6 +330,12 @@ impl Node for DeclareNode {
             }
             None => Variable::new(self.kind, eval),
         };
+
+        assert!(vars.get(&self.name).is_none());
+        assert!(self.funcs.borrow().get(&self.name).is_none());
+        let sn: &str = self.name.as_ref();
+        assert_ne!(sn, "println");
+        assert_ne!(sn, "readln");
         vars.insert(self.name.clone(), v);
         // println!("vars {:#?}", vars);
 
@@ -590,6 +603,7 @@ impl Node for FuncCallNode {
                             arg_name.clone(),
                             Some(Box::new(SimpleVariableNode::new(param))),
                             *arg_kind,
+                            &self.funcs,
                         );
 
                         d_node.eval(&mut new_vars);

@@ -228,11 +228,11 @@ impl Parser {
                             TokenKind::TypeString => Box::new(BoolNode::new(node)),
                             _ => unreachable!(),
                         };
-                        Box::new(DeclareNode::new(name.clone(), Some(v), kind))
+                        Box::new(DeclareNode::new(name.clone(), Some(v), kind, &self.funcs))
                     } else {
                         self.select_prev();
 
-                        Box::new(DeclareNode::new(name.clone(), None, kind))
+                        Box::new(DeclareNode::new(name.clone(), None, kind, &self.funcs))
                     }
                 } else {
                     bail!("Expected identifier after {}, got {}", tk.kind, ntk.kind)
@@ -403,6 +403,7 @@ impl Parser {
                             args,
                             self.parse_block()?,
                         );
+                        assert!(self.funcs.borrow().get(func_name).is_none());
                         self.funcs.borrow_mut().insert(func_name.clone(), func);
                     } else {
                         bail!("No identifier after type, {}", ntk);
