@@ -159,7 +159,7 @@ impl Parser {
                 TokenKind::Op(op) => {
                     match op {
                         Op::Add | Op::Sub => {
-                            c = Box::new(BinaryNode::new(op, self.parse_term()?, c));
+                            c = Box::new(BinaryNode::new(op, c, self.parse_term()?));
                         }
                         _ => break,
                     };
