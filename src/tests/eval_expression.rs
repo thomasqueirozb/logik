@@ -78,21 +78,21 @@ fn errors() {
 
     assert_eq!(
         eval_expression("3+ /* a */").unwrap_err().to_string(),
-        "Expected number, variable, operator or '(', found 'EOF'"
+        "Expected number, variable, operator or '(', found EOF @ 0:11"
     );
 
     assert_eq!(
         eval_expression("3+ /* a */-").unwrap_err().to_string(),
-        "Expected number, variable, operator or '(', found 'EOF'"
+        "Expected number, variable, operator or '(', found EOF @ 0:12"
     );
 
     assert_eq!(
         eval_expression("/* */").unwrap_err().to_string(),
-        "Expected number, variable, operator or '(', found 'EOF'"
+        "Expected number, variable, operator or '(', found EOF @ 0:6"
     );
     assert_eq!(
         eval_expression("/* 1 + 1*/").unwrap_err().to_string(),
-        "Expected number, variable, operator or '(', found 'EOF'"
+        "Expected number, variable, operator or '(', found EOF @ 0:11"
     );
 
     assert_eq!(
