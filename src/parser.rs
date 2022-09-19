@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use anyhow::{bail, Result};
+use color_eyre::eyre::{bail, Result};
 
 pub struct Parser {
     tokens: Vec<Token>,

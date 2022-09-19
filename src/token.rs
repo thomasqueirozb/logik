@@ -2,7 +2,7 @@ use crate::operator::{is_operator_char, CondOp, Op};
 
 use std::fmt;
 
-use anyhow::{bail, Result};
+use color_eyre::eyre::{bail, Result};
 
 pub type Number = i64;
 

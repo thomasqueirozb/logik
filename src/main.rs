@@ -11,20 +11,20 @@ use parser::eval;
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::Result;
-use structopt::StructOpt;
+use clap::Parser;
+use color_eyre::eyre::Result;
 
 /// Logik
-#[derive(Debug, StructOpt)]
-#[structopt(author, about, rename_all = "kebab-case")]
+#[derive(Parser, Debug)]
+#[clap(author, about, rename_all = "kebab-case")]
 /// Simple command line calculator
 struct Opt {
     /// Program passed in as a string instead of using a file
-    #[structopt(short, long)]
+    #[clap(short, long)]
     command: Option<String>,
 
     /// Input file path
-    #[structopt(conflicts_with = "command", required_unless = "command")]
+    #[clap(conflicts_with = "command", required_unless = "command")]
     input_file: Option<PathBuf>,
 }
 
@@ -39,7 +39,9 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let opt: Opt = Opt::from_args();
+    color_eyre::install()?;
+
+    let opt: Opt = Opt::parse();
 
     let input = {
         if let Some(ifp) = opt.input_file {
